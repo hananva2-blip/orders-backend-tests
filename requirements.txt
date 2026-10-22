@@ -1,0 +1,8 @@
+pytest
+requests
+psycopg[binary]
+pydantic
+pyjwt
+locust
+allure-pytest
+ruff
