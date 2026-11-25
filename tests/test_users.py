@@ -11,8 +11,18 @@ def test_register_saves_user_in_db(api, db):
     assert response.status_code == 201
 
     password_hash = db.execute("SELECT password_hash FROM users WHERE email = %s", (email,)).fetchone()[0]
-    assert password_hash != PASSWORD  # never store plain passwords
-    assert len(password_hash) == 64
+    assert PASSWORD not in password_hash  # never store plain passwords
+    salt, digest = password_hash.split("$")
+    assert len(salt) == 32 and len(digest) == 64
+
+
+def test_same_password_gets_different_hashes(api, db):
+    emails = [f"user_{uuid.uuid4().hex[:8]}@test.com" for _ in range(2)]
+    for email in emails:
+        api.post("/users", json={"email": email, "password": PASSWORD})
+
+    hashes = db.execute("SELECT password_hash FROM users WHERE email = ANY(%s)", (emails,)).fetchall()
+    assert hashes[0] != hashes[1]  # a random salt per user
 
 
 def test_register_duplicate_email(api, user):

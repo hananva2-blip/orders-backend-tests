@@ -23,4 +23,6 @@ INSERT INTO products (name, price, stock) VALUES
     ('Laptop', 3500.00, 1000),
     ('Mouse', 80.00, 1000),
     ('Keyboard', 250.00, 1000),
-    ('Limited Edition Headphones', 900.00, 3);
+    ('Limited Edition Headphones', 900.00, 3),
+    -- Bought only by the Locust load test, so load runs never use up the stock the tests rely on
+    ('USB Cable', 15.00, 1000000);

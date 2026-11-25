@@ -1,5 +1,7 @@
 import hashlib
+import hmac
 import os
+from datetime import datetime, timedelta, timezone
 
 import jwt
 import psycopg
@@ -8,6 +10,7 @@ from pydantic import BaseModel, EmailStr, Field
 
 DB_URL = os.getenv("DB_URL", "postgresql://shop:shop@localhost:5433/shop")
 SECRET = os.getenv("JWT_SECRET", "local-dev-secret-change-me-in-production")
+TOKEN_TTL = timedelta(hours=1)
 
 app = FastAPI(title="Orders API")
 
@@ -27,8 +30,16 @@ def db():
         yield conn
 
 
-def hash_password(password):
-    return hashlib.pbkdf2_hmac("sha256", password.encode(), SECRET.encode(), 100_000).hex()
+def hash_password(password, salt=None):
+    """PBKDF2 with a random salt per user, stored as "salt$hash"."""
+    salt = salt or os.urandom(16).hex()
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100_000).hex()
+    return f"{salt}${digest}"
+
+
+def check_password(password, stored):
+    salt = stored.split("$")[0]
+    return hmac.compare_digest(hash_password(password, salt), stored)
 
 
 def current_user(authorization: str = Header(None)):
@@ -47,18 +58,18 @@ def register(body: Credentials, conn=Depends(db)):
         ).fetchone()
     except psycopg.errors.UniqueViolation:
         raise HTTPException(409, "Email already exists")
+    # Commit before answering, so a 201 always means the row is saved
+    conn.commit()
     return {"id": row[0], "email": body.email}
 
 
 @app.post("/login")
 def login(body: Credentials, conn=Depends(db)):
-    row = conn.execute(
-        "SELECT id FROM users WHERE email = %s AND password_hash = %s",
-        (body.email, hash_password(body.password)),
-    ).fetchone()
-    if not row:
+    row = conn.execute("SELECT id, password_hash FROM users WHERE email = %s", (body.email,)).fetchone()
+    if not row or not check_password(body.password, row[1]):
         raise HTTPException(401, "Invalid email or password")
-    return {"token": jwt.encode({"user_id": row[0]}, SECRET, algorithm="HS256")}
+    expires = datetime.now(timezone.utc) + TOKEN_TTL
+    return {"token": jwt.encode({"user_id": row[0], "exp": expires}, SECRET, algorithm="HS256")}
 
 
 @app.get("/products")
@@ -83,6 +94,7 @@ def create_order(body: OrderRequest, user_id=Depends(current_user), conn=Depends
         "INSERT INTO orders (user_id, product_id, quantity, total) VALUES (%s, %s, %s, %s) RETURNING id",
         (user_id, body.product_id, body.quantity, total),
     ).fetchone()[0]
+    conn.commit()
     return {"id": order_id, "product_id": body.product_id, "quantity": body.quantity, "total": float(total)}
 
 

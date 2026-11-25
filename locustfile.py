@@ -3,6 +3,7 @@ import uuid
 from locust import HttpUser, between, task
 
 PASSWORD = "Passw0rd!"
+USB_CABLE = 5  # Its own product with a huge stock (init.sql), so load runs don't drain the test data
 
 
 class Shopper(HttpUser):
@@ -19,5 +20,5 @@ class Shopper(HttpUser):
         self.client.get("/products")
 
     @task(1)
-    def buy_mouse(self):
-        self.client.post("/orders", json={"product_id": 2, "quantity": 1})
+    def buy_cable(self):
+        self.client.post("/orders", json={"product_id": USB_CABLE, "quantity": 1})

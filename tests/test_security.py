@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import jwt
 
 from tests.conftest import new_logged_in_user
@@ -20,4 +22,12 @@ def test_sql_injection_in_login_is_rejected(api):
 def test_forged_token_is_rejected(api, user):
     forged = jwt.encode({"user_id": user.user_id}, "an-attacker-secret-that-is-long-enough", algorithm="HS256")
     response = api.get("/orders/1", headers={"Authorization": f"Bearer {forged}"})
+    assert response.status_code == 401
+
+
+def test_expired_token_is_rejected(api, user):
+    """A token signed with the real secret, but already expired."""
+    expired = datetime.now(timezone.utc) - timedelta(minutes=1)
+    token = jwt.encode({"user_id": user.user_id, "exp": expired}, "local-dev-secret-change-me-in-production", algorithm="HS256")
+    response = api.get("/orders/1", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401
